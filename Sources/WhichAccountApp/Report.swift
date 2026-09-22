@@ -87,6 +87,7 @@ enum Report {
       which-account --show-picker <url>
                                        show the panel and print the choice; open nothing
                                        (a ticked checkbox still writes the rule)
+      --appearance light|dark          with --show-picker, pin the panel's appearance
       which-account --setup            ask macOS to make this the default browser
       which-account --restore          hand the default browser back to config's `browser`
       which-account --version

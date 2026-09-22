@@ -13,6 +13,9 @@ enum Mode {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mode: Mode
+    /// Development aid: pin the panel to one appearance so both can be reviewed
+    /// without flipping the whole system. Unset means follow the system, as shipped.
+    private let appearance: NSAppearance.Name?
     private var router: Router?
     private var picker: PickerController?
     private var handled = false
@@ -20,12 +23,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// If LaunchServices launches us but never delivers a URL, don't linger.
     private let appleEventTimeout: TimeInterval = 10
 
-    init(mode: Mode) {
+    init(mode: Mode, appearance: NSAppearance.Name? = nil) {
         self.mode = mode
+        self.appearance = appearance
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let appearance {
+            NSApp.appearance = NSAppearance(named: appearance)
+        }
+
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURL(_:withReplyEvent:)),

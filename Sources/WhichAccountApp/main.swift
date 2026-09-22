@@ -12,6 +12,20 @@ func urlArgument(after flag: String) -> String {
     return arguments[index + 1]
 }
 
+/// `--appearance light|dark` pins the panel's appearance for review.
+func appearanceOverride() -> NSAppearance.Name? {
+    guard let index = arguments.firstIndex(of: "--appearance"), index + 1 < arguments.count else {
+        return nil
+    }
+    switch arguments[index + 1].lowercased() {
+    case "light": return .aqua
+    case "dark": return .darkAqua
+    default:
+        FileHandle.standardError.write(Data("which-account: --appearance takes light or dark\n".utf8))
+        exit(2)
+    }
+}
+
 let mode: Mode
 
 switch arguments.first {
@@ -51,6 +65,6 @@ case let first?:
 let app = NSApplication.shared
 // No Dock icon, no menu bar: we are a one-shot dialog.
 app.setActivationPolicy(.accessory)
-let delegate = AppDelegate(mode: mode)
+let delegate = AppDelegate(mode: mode, appearance: appearanceOverride())
 app.delegate = delegate
 app.run()
