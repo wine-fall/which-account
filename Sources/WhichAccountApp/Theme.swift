@@ -39,7 +39,8 @@ enum Theme {
     static let checkboxFill = dynamic(light: hex(0xFFFFFF), dark: hex(0x3A3A3F))
     static let checkboxBorder = dynamic(light: hex(0x000000, alpha: 0.28),
                                         dark: hex(0xFFFFFF, alpha: 0.30))
-    static let checkboxChecked = hex(0x0A7AFF)
+    /// The check itself, in the panel's foreground colour.
+    static let checkboxTick = dynamic(light: hex(0x1D1D1F), dark: hex(0xF5F5F7))
 
     /// Shown when Chrome stores no color for a profile.
     static let avatarFallback = hex(0x8E8E93)

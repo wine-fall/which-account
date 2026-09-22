@@ -84,6 +84,10 @@ final class ProfileRowView: NSView {
                      centerY: bounds.midY)
     }
 
+    /// The picker appears while another app is frontmost, so the very first click
+    /// has to act rather than merely activate us.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func mouseDown(with event: NSEvent) {
         onClick?()
     }
@@ -95,13 +99,17 @@ final class ProfileRowView: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .button }
 
     override func isAccessibilityElement() -> Bool { true }
+
+    override func accessibilityPerformPress() -> Bool {
+        onClick?()
+        return true
+    }
 }
 
 /// The bottom strip: the remember checkbox on the left, `esc cancel` on the right.
 final class FooterView: NSView {
     private let host: String
     private let checkboxLabel: NSTextField
-    private let cancelLabel: NSTextField
 
     var isChecked: Bool = false {
         didSet { if isChecked != oldValue { needsDisplay = true } }
@@ -123,17 +131,13 @@ final class FooterView: NSView {
             attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold),
                          .foregroundColor: Theme.primaryText]))
 
-        self.checkboxLabel = NSTextField(labelWithAttributedString: text)
+        self.checkboxLabel = PassthroughTextField(labelWithAttributedString: text)
         self.checkboxLabel.lineBreakMode = .byTruncatingTail
         self.checkboxLabel.cell?.truncatesLastVisibleLine = true
-
-        self.cancelLabel = Draw.label("cancel",
-                                      font: .systemFont(ofSize: 11),
-                                      color: Theme.secondaryText)
+        self.checkboxLabel.setAccessibilityElement(false)
 
         super.init(frame: NSRect(x: 0, y: 0, width: width, height: Metrics.footerHeight))
         addSubview(checkboxLabel)
-        addSubview(cancelLabel)
         layoutParts()
     }
 
@@ -142,9 +146,13 @@ final class FooterView: NSView {
 
     private let escCap = Keycap(text: "esc")
 
-    private var cancelWidth: CGFloat {
-        ceil(("cancel" as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11)]).width)
+    private static let cancelFont = NSFont.systemFont(ofSize: 11)
+
+    private var cancelSize: NSSize {
+        ("cancel" as NSString).size(withAttributes: [.font: FooterView.cancelFont])
     }
+
+    private var cancelWidth: CGFloat { ceil(cancelSize.width) }
 
     /// Everything from the box through the end of the label toggles the checkbox.
     private var checkboxHitWidth: CGFloat {
@@ -153,14 +161,12 @@ final class FooterView: NSView {
 
     private func layoutParts() {
         let labelX = Metrics.checkboxSize + Metrics.checkboxGap
-        let cancelX = bounds.width - cancelWidth
-        let available = max(40, cancelX - escCap.width - 6 - 8 - labelX)
+        let available = max(40, bounds.width - cancelWidth - 6 - escCap.width - 8 - labelX)
 
         checkboxLabel.frame = NSRect(x: labelX, y: 2,
                                      width: min(ceil(checkboxLabel.intrinsicContentSize.width),
                                                 available),
                                      height: 16)
-        cancelLabel.frame = NSRect(x: cancelX, y: 3, width: cancelWidth, height: 14)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -170,12 +176,22 @@ final class FooterView: NSView {
                          height: Metrics.checkboxSize)
         Draw.checkbox(checked: isChecked, in: box)
 
+        let size = cancelSize
+        ("cancel" as NSString).draw(
+            at: NSPoint(x: bounds.width - cancelWidth, y: bounds.midY - size.height / 2),
+            withAttributes: [.font: FooterView.cancelFont,
+                             .foregroundColor: Theme.secondaryText])
+
         let capRight = bounds.width - cancelWidth - 6
         escCap.draw(in: NSRect(x: capRight - escCap.width,
                                y: (Metrics.footerHeight - Metrics.keycapHeight) / 2,
                                width: escCap.width,
                                height: Metrics.keycapHeight))
     }
+
+    /// The picker appears while another app is frontmost, so the very first click
+    /// has to act rather than merely activate us.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
@@ -188,6 +204,11 @@ final class FooterView: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .checkBox }
     override func accessibilityLabel() -> String? { "Always use this for \(host)" }
     override func accessibilityValue() -> Any? { isChecked }
+
+    override func accessibilityPerformPress() -> Bool {
+        onToggle?()
+        return true
+    }
 }
 
 /// A 1px hairline.

@@ -41,10 +41,10 @@ public struct ChromiumProfile: Equatable, Sendable {
         isSignedIn ? name : "Not signed in"
     }
 
-    /// The letter drawn inside the avatar circle.
+    /// The letter drawn inside the avatar circle: the first letter of whatever the
+    /// row's title line shows, so a signed-in row reads as its email.
     public var initial: String {
-        let source = name.isEmpty ? directory : name
-        guard let first = source.first else { return "?" }
+        guard let first = title.first else { return "?" }
         return String(first).uppercased()
     }
 }

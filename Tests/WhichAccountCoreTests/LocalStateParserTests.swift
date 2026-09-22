@@ -16,7 +16,7 @@ final class LocalStateParserTests: XCTestCase {
         XCTAssertTrue(work.isSignedIn)
         XCTAssertEqual(work.title, "work@example.com")
         XCTAssertEqual(work.subtitle, "work.example.com")
-        XCTAssertEqual(work.initial, "W")
+        XCTAssertEqual(work.initial, "W")  // first letter of the title line, i.e. the email
 
         let personal = set.profiles[1]
         XCTAssertEqual(personal.title, "personal@example.com")
@@ -41,6 +41,8 @@ final class LocalStateParserTests: XCTestCase {
         XCTAssertFalse(guest.isSignedIn)
         XCTAssertEqual(guest.title, "Profile 2")
         XCTAssertEqual(guest.subtitle, "Not signed in")
+        // With no email to show, the avatar falls back to the profile name's letter.
+        XCTAssertEqual(guest.initial, "P")
         XCTAssertNil(guest.themeColor)
     }
 

@@ -8,6 +8,9 @@ struct PickerChoice {
 }
 
 /// Borderless panels refuse key status by default; this one needs the keyboard.
+///
+/// Paired with `.nonactivatingPanel`, this lets the panel take key focus without
+/// requiring the process to win activation outright.
 final class PickerWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -20,6 +23,7 @@ final class PickerRootView: NSView {
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
         let card = bounds.insetBy(dx: 0.5, dy: 0.5)
@@ -45,7 +49,7 @@ final class PickerRootView: NSView {
 }
 
 /// Builds, shows and drives the picker. One instance per invocation.
-final class PickerController: NSObject, NSWindowDelegate {
+final class PickerController: NSObject {
     private let profiles: [ChromiumProfile]
     private let url: WebURL
     private let completion: (PickerChoice?) -> Void
@@ -61,7 +65,7 @@ final class PickerController: NSObject, NSWindowDelegate {
          url: WebURL,
          completion: @escaping (PickerChoice?) -> Void) {
         self.profiles = profiles
-        self.selectedIndex = min(max(0, preselectedIndex), max(0, profiles.count - 1))
+        self.selectedIndex = PickerKeymap.clamp(preselectedIndex, count: max(1, profiles.count))
         self.url = url
         self.completion = completion
         super.init()
@@ -74,7 +78,7 @@ final class PickerController: NSObject, NSWindowDelegate {
         let frame = NSRect(x: 0, y: 0, width: Metrics.panelWidth, height: height)
 
         window = PickerWindow(contentRect: frame,
-                              styleMask: [.borderless],
+                              styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered,
                               defer: false)
         window.isOpaque = false
@@ -84,7 +88,6 @@ final class PickerController: NSObject, NSWindowDelegate {
         window.isMovableByWindowBackground = false
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        window.delegate = self
 
         let root = PickerRootView(frame: frame)
         root.onKeyDown = { [weak self] event in self?.handle(event) ?? false }
@@ -99,6 +102,9 @@ final class PickerController: NSObject, NSWindowDelegate {
         window.invalidateShadow()
     }
 
+    /// Deliberately no dismiss-on-focus-loss: LaunchServices launches us while another
+    /// app is frontmost, and a race there would cancel the panel before it is seen.
+    /// Escape is the only way to close without opening anything.
     private func centerOnActiveScreen() {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
@@ -152,41 +158,36 @@ final class PickerController: NSObject, NSWindowDelegate {
 
         footer = FooterView(host: url.host, width: textWidth)
         footer.frame.origin = NSPoint(x: textX, y: y)
-        footer.onToggle = { [weak self] in
-            guard let self else { return }
-            self.footer.isChecked.toggle()
-        }
+        footer.onToggle = { [weak self] in self?.footer.isChecked.toggle() }
         root.addSubview(footer)
     }
 
     // MARK: input
 
     private func handle(_ event: NSEvent) -> Bool {
-        switch event.keyCode {
-        case 126: move(by: -1); return true              // up arrow
-        case 125: move(by: 1); return true               // down arrow
-        case 36, 76: choose(index: selectedIndex); return true  // return, keypad enter
-        case 53: finish(nil); return true                // escape
-        default: break
-        }
-
-        guard let characters = event.charactersIgnoringModifiers,
-              let digit = characters.first,
-              let value = digit.wholeNumberValue,
-              (1...9).contains(value),
-              value <= profiles.count else {
+        switch PickerKeymap.action(keyCode: event.keyCode,
+                                   characters: event.charactersIgnoringModifiers,
+                                   profileCount: profiles.count,
+                                   selectedIndex: selectedIndex) {
+        case let .move(index):
+            select(index)
+            return true
+        case let .choose(index):
+            choose(index: index)
+            return true
+        case .cancel:
+            finish(nil)
+            return true
+        case .ignore:
             return false
         }
-        choose(index: value - 1)
-        return true
     }
 
-    private func move(by delta: Int) {
-        guard !profiles.isEmpty else { return }
-        let count = profiles.count
-        selectedIndex = ((selectedIndex + delta) % count + count) % count
-        for (index, row) in rows.enumerated() {
-            row.isSelected = (index == selectedIndex)
+    private func select(_ index: Int) {
+        guard profiles.indices.contains(index) else { return }
+        selectedIndex = index
+        for (position, row) in rows.enumerated() {
+            row.isSelected = (position == selectedIndex)
         }
     }
 
@@ -200,10 +201,5 @@ final class PickerController: NSObject, NSWindowDelegate {
         finished = true
         window.orderOut(nil)
         completion(choice)
-    }
-
-    /// Clicking away means "not now" — the same as escape.
-    func windowDidResignKey(_ notification: Notification) {
-        finish(nil)
     }
 }

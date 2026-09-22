@@ -75,43 +75,54 @@ enum Draw {
                                    withAttributes: attributes)
     }
 
+    /// The box never fills: ticking it makes the check appear, nothing else.
+    /// Keeps the panel free of any colour that would outshout the account rows.
     static func checkbox(checked: Bool, in rect: NSRect) {
-        if checked {
-            Theme.checkboxChecked.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4).fill()
+        let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: 3.5, yRadius: 3.5)
+        Theme.checkboxFill.setFill()
+        path.fill()
+        Theme.checkboxBorder.setStroke()
+        path.lineWidth = 1
+        path.stroke()
 
-            let tick = NSBezierPath()
-            tick.move(to: NSPoint(x: rect.minX + 3, y: rect.minY + 7.2))
-            tick.line(to: NSPoint(x: rect.minX + 5.6, y: rect.minY + 9.8))
-            tick.line(to: NSPoint(x: rect.minX + 11, y: rect.minY + 4.4))
-            tick.lineWidth = 1.8
-            tick.lineCapStyle = .round
-            tick.lineJoinStyle = .round
-            NSColor.white.setStroke()
-            tick.stroke()
-        } else {
-            Theme.checkboxFill.setFill()
-            let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
-                                    xRadius: 3.5, yRadius: 3.5)
-            path.fill()
-            Theme.checkboxBorder.setStroke()
-            path.lineWidth = 1
-            path.stroke()
-        }
+        guard checked else { return }
+
+        let tick = NSBezierPath()
+        tick.move(to: NSPoint(x: rect.minX + 3, y: rect.minY + 7.2))
+        tick.line(to: NSPoint(x: rect.minX + 5.6, y: rect.minY + 9.8))
+        tick.line(to: NSPoint(x: rect.minX + 11, y: rect.minY + 4.4))
+        tick.lineWidth = 1.8
+        tick.lineCapStyle = .round
+        tick.lineJoinStyle = .round
+        Theme.checkboxTick.setStroke()
+        tick.stroke()
     }
 
     /// A non-editable label that truncates with an ellipsis, like the design shows.
+    ///
+    /// Click-through: a label sitting on a row must not swallow the click that
+    /// picks that row, and the row — not its two lines of text — is the thing
+    /// VoiceOver should announce.
     static func label(_ text: String,
                       font: NSFont,
                       color: NSColor,
                       alignment: NSTextAlignment = .left) -> NSTextField {
-        let field = NSTextField(labelWithString: text)
+        let field = PassthroughTextField(labelWithString: text)
         field.font = font
         field.textColor = color
         field.alignment = alignment
         field.lineBreakMode = .byTruncatingTail
         field.cell?.truncatesLastVisibleLine = true
         field.isSelectable = false
+        field.setAccessibilityElement(false)
         return field
     }
+}
+
+/// A label that is invisible to both the mouse and the accessibility hit test,
+/// so the view behind it stays the clickable thing.
+final class PassthroughTextField: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? { nil }
 }
