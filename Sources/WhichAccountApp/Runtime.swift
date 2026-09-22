@@ -105,7 +105,7 @@ struct Router {
 
         self.appURL = BrowserResolver.appURL(forBundleID: configured)
         self.browser = ChromiumFamily.browser(forBundleID: configured)
-        self.profileSet = browser.map { LocalStateParser.discover(browser: $0) }
+        self.profileSet = browser.map { LocalStateParser.discover(browser: $0, home: Router.home) }
             ?? ChromiumProfileSet(profiles: [], lastUsed: nil)
     }
 
@@ -131,6 +131,20 @@ struct Router {
             return nil
         }
         return LaunchPlan(appURL: safari, profileDirectory: nil, url: rawURL)
+    }
+
+    /// Where to look for the browser's `Local State`.
+    ///
+    /// `NSHomeDirectory()` ignores `$HOME`, so `WHICH_ACCOUNT_HOME` exists as a
+    /// development seam: it lets the picker be driven from a synthetic set of
+    /// profiles. Screenshots and manual testing use it so that neither ever has to
+    /// be produced from a real person's accounts.
+    static var home: URL {
+        if let override = ProcessInfo.processInfo.environment["WHICH_ACCOUNT_HOME"],
+           !override.isEmpty {
+            return URL(fileURLWithPath: override, isDirectory: true)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
     }
 
     /// Record `host -> profile` so this host stops asking.

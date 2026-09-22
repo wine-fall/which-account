@@ -2,20 +2,12 @@
 
 A macOS shim that asks **which Chrome account** a link should open in — then remembers the answer.
 
-```
-┌──────────────────────────────────────────────────┐
-│  Open in which account?                          │
-│  github.com/login/device                         │
-│                                                  │
-│   (Z)  work@example.com              ⏎   1      │
-│        work.example.com                                  │
-│                                                  │
-│   (F)  personal@example.com                 2      │
-│        Personal                                      │
-│  ────────────────────────────────────────────    │
-│   ☐ Always use this for github.com    esc cancel │
-└──────────────────────────────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/picker-dark.png">
+  <img alt="The picker: two accounts, each with a number key; a checkbox reading &quot;Always use this for github.com&quot;" src="docs/picker-light.png" width="446">
+</picture>
+
+<sub>Real screenshot. The accounts shown are synthetic — see <a href="#development">Development</a>.</sub>
 
 ## The problem
 
@@ -145,12 +137,29 @@ Handing the browser back triggers the same one-time macOS confirmation.
 If the browser named in your config has been uninstalled, which-account falls back to
 Safari and warns you once — never to "the system default", which would be itself.
 
+<a id="development"></a>
+
 ## Development
 
 ```sh
 make build    # debug build
 make test     # unit tests: Local State parsing, rules, routing, keymap
 make release  # optimised build
+```
+
+`NSHomeDirectory()` ignores `$HOME`, so `WHICH_ACCOUNT_HOME` points profile discovery
+at another directory. Screenshots and manual testing use it, so that neither is ever
+produced from a real person's accounts:
+
+```sh
+mkdir -p /tmp/demo/Library/Application\ Support/Google/Chrome
+cat > /tmp/demo/Library/Application\ Support/Google/Chrome/Local\ State <<'JSON'
+{ "profile": { "last_used": "Profile 1", "info_cache": {
+    "Default":   { "active_time": 100, "name": "Personal", "user_name": "personal@example.com" },
+    "Profile 1": { "active_time": 200, "name": "Work",     "user_name": "work@example.com" } } } }
+JSON
+
+WHICH_ACCOUNT_HOME=/tmp/demo .build/release/which-account --show-picker https://github.com/login/device
 ```
 
 The routing policy, the rule matching, the `Local State` parsing and the panel's keyboard

@@ -4,7 +4,7 @@ import XCTest
 final class GlobTests: XCTestCase {
     func testLiteralAndWildcards() {
         XCTAssertTrue(Glob.matches(pattern: "linear.app", subject: "linear.app"))
-        XCTAssertTrue(Glob.matches(pattern: "linear.app/*", subject: "linear.app/acme/issue/OP-1"))
+        XCTAssertTrue(Glob.matches(pattern: "linear.app/*", subject: "linear.app/acme/issue/ENG-1"))
         XCTAssertTrue(Glob.matches(pattern: "*.work.example.com/*", subject: "api.work.example.com/v1/x"))
         XCTAssertTrue(Glob.matches(pattern: "*", subject: "anything at all"))
         XCTAssertTrue(Glob.matches(pattern: "github.com/a?me/*", subject: "github.com/acme/repo"))
@@ -33,13 +33,13 @@ final class GlobTests: XCTestCase {
 
 final class WebURLTests: XCTestCase {
     func testAcceptsHTTPAndHTTPS() {
-        XCTAssertEqual(WebURL("https://linear.app/acme/issue/OP-1234")?.host, "linear.app")
+        XCTAssertEqual(WebURL("https://linear.app/acme/issue/ENG-1234")?.host, "linear.app")
         XCTAssertEqual(WebURL("http://example.com")?.host, "example.com")
     }
 
     func testStripsSchemeAndLoneTrailingSlash() {
-        XCTAssertEqual(WebURL("https://linear.app/acme/issue/OP-1234")?.schemeless,
-                       "linear.app/acme/issue/OP-1234")
+        XCTAssertEqual(WebURL("https://linear.app/acme/issue/ENG-1234")?.schemeless,
+                       "linear.app/acme/issue/ENG-1234")
         XCTAssertEqual(WebURL("https://example.com/")?.schemeless, "example.com")
         XCTAssertEqual(WebURL("https://youtube.com/watch?v=abc")?.schemeless, "youtube.com/watch?v=abc")
     }

@@ -5,7 +5,7 @@ public struct ChromiumProfile: Equatable, Sendable {
     /// Directory name under the browser's user-data dir: "Default", "Profile 3", ...
     /// This is what goes into `--profile-directory=`.
     public let directory: String
-    /// The profile's display name, e.g. "work.example.com" or "Personal".
+    /// The profile's display name, e.g. "Work" or "Personal".
     public let name: String
     /// The signed-in account, e.g. "work@example.com". Empty/missing means not signed in.
     public let userName: String?

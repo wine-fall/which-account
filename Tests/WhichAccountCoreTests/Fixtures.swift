@@ -18,7 +18,7 @@ enum Fixtures {
           },
           "Profile 3": {
             "active_time": 1790044221.770913,
-            "name": "work.example.com",
+            "name": "Work",
             "user_name": "work@example.com",
             "profile_color_seed": -1499549,
             "profile_highlight_color": -14737376
@@ -47,7 +47,7 @@ enum Fixtures {
           },
           "Profile 3": {
             "active_time": 1790044221.0,
-            "name": "work.example.com",
+            "name": "Work",
             "user_name": "work@example.com"
           }
         }

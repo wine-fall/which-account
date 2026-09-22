@@ -11,11 +11,11 @@ final class LocalStateParserTests: XCTestCase {
         XCTAssertEqual(set.preselectedIndex, 0)
 
         let work = set.profiles[0]
-        XCTAssertEqual(work.name, "work.example.com")
+        XCTAssertEqual(work.name, "Work")
         XCTAssertEqual(work.userName, "work@example.com")
         XCTAssertTrue(work.isSignedIn)
         XCTAssertEqual(work.title, "work@example.com")
-        XCTAssertEqual(work.subtitle, "work.example.com")
+        XCTAssertEqual(work.subtitle, "Work")
         XCTAssertEqual(work.initial, "W")  // first letter of the title line, i.e. the email
 
         let personal = set.profiles[1]
