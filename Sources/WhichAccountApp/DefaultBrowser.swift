@@ -36,9 +36,38 @@ enum DefaultBrowser {
         }
     }
 
+    /// The `.app` this process is running inside, or `nil` when it is a bare binary.
+    ///
+    /// Invoked through a symlink, `Bundle.main` resolves to the directory holding the
+    /// symlink and the bundle identifier is `nil` — so registering `Bundle.main.bundleURL`
+    /// unchecked would hand `http`/`https` to something like `/opt/homebrew/bin`.
+    /// Package wrappers must exec the real path inside the bundle.
+    static func installedBundleURL() -> URL? {
+        guard Bundle.main.bundleIdentifier == Constants.bundleID,
+              Bundle.main.bundleURL.pathExtension == "app" else {
+            return nil
+        }
+        return Bundle.main.bundleURL
+    }
+
+    private static func reportNotInBundle() {
+        FileHandle.standardError.write(Data("""
+            which-account: this copy is not inside which-account.app, so there is no
+            bundle to register as your browser. Run the one in the app bundle:
+              ~/Applications/which-account.app/Contents/MacOS/which-account --setup
+            Installed with Homebrew? Run `which-account --setup`; the wrapper in bin
+            execs the bundled binary for you.
+
+            """.utf8))
+    }
+
     /// `--setup`: take over as the default browser, recording whoever held the job.
     static func setup(completion: @escaping (Int32) -> Void) {
-        let appURL = Bundle.main.bundleURL
+        guard let appURL = installedBundleURL() else {
+            reportNotInBundle()
+            completion(1)
+            return
+        }
 
         // Record the browser we are displacing before we displace it, unless the
         // config already names someone other than us.
