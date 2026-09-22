@@ -30,9 +30,22 @@ The picker is the fallback, not the product. Once you have ticked
 
 ## Install
 
-Needs macOS 13+ and the Xcode Command Line Tools (`xcode-select --install`). No Xcode,
-no dependencies, no developer account — a locally compiled binary carries no quarantine
-flag, so nothing needs signing.
+Needs macOS 13+ and current Xcode Command Line Tools (`xcode-select --install`). No
+Xcode, no dependencies, no developer account — a locally compiled binary carries no
+quarantine flag, so nothing needs signing.
+
+### Homebrew
+
+```sh
+brew install wine-fall/tap/which-account
+which-account --setup
+```
+
+The formula builds from source on your machine, which is what keeps signing and
+notarization out of the picture. `--setup` is the step that asks macOS to hand over
+`http` and `https`; `which-account --restore` hands it back.
+
+### From source
 
 ```sh
 git clone https://github.com/wine-fall/which-account.git
@@ -126,6 +139,13 @@ shell's directory, a `BROWSER_PROFILE=` environment variable, and Firefox/Safari
 profiles.
 
 ## Uninstall
+
+```sh
+which-account --restore          # hand the default browser back first
+brew uninstall which-account     # if you installed with Homebrew
+```
+
+From a source checkout:
 
 ```sh
 make uninstall   # hands the default browser back, removes the app, keeps your config
