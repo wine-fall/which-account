@@ -53,9 +53,8 @@ $(APP): release Resources/Info.plist
 	@echo "assembled and signed $(APP)"
 
 install: $(APP)
-	@echo "==> telling LaunchServices about the app"
-	"$(LSREGISTER)" -f "$(APP)"
 	@echo "==> recording your current browser, then asking to take over http/https"
+	@echo "    (--setup registers the bundle with LaunchServices itself)"
 	@echo "    macOS will show its own confirmation dialog; nothing changes until you accept."
 	"$(EXEC)" --setup
 

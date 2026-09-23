@@ -81,6 +81,18 @@ enum DefaultBrowser {
             """.utf8))
     }
 
+    /// Tell LaunchServices this bundle exists. Failure is not fatal: the app may
+    /// already be known, and `setDefaultApplication` will report the real problem.
+    static func registerWithLaunchServices(appURL: URL) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: lsregisterPath)
+        process.arguments = ["-f", appURL.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
+
     /// True when we already handle both schemes, so there is nothing to ask for.
     static func isAlreadyDefault(appURL: URL) -> Bool {
         ["http", "https"].allSatisfy { scheme in
@@ -99,6 +111,11 @@ enum DefaultBrowser {
             completion(1)
             return
         }
+
+        // LaunchServices does not scan every install location — a Homebrew Cellar,
+        // for one — so make sure it knows about this bundle before asking it to be
+        // the browser. Registering an app that is already registered is a no-op.
+        registerWithLaunchServices(appURL: appURL)
 
         // Asking to become the default when we already are comes back as an error,
         // which reads like the whole install failed. Say so plainly instead.
