@@ -42,8 +42,9 @@ brew install wine-fall/tap/which-account
 which-account --setup
 ```
 
-The formula builds from source on your machine, which is what keeps signing and
-notarization out of the picture. `--setup` is the step that asks macOS to hand over
+On macOS 15 and later — Apple Silicon or Intel — this installs a prebuilt bottle in a
+few seconds. Everywhere else it builds from source, which needs current Command Line
+Tools (`xcode-select --install`). `--setup` is the step that asks macOS to hand over
 `http` and `https`; `which-account --restore` hands it back.
 
 ### From source
