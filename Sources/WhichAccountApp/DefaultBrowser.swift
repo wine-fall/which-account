@@ -8,16 +8,13 @@ enum DefaultBrowser {
     enum Outcome {
         case confirmed
         case failed(String)
-        case unsupportedOS
     }
 
     /// Ask macOS to route http and https to `appURL`. The user still has to say yes.
+    ///
+    /// `setDefaultApplication(at:toOpenURLsWithScheme:)` is available from macOS 12,
+    /// below our deployment target, so every supported system gets this path.
     static func makeDefault(appURL: URL, completion: @escaping (Outcome) -> Void) {
-        guard #available(macOS 14.0, *) else {
-            completion(.unsupportedOS)
-            return
-        }
-
         let workspace = NSWorkspace.shared
         workspace.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "http") { httpError in
             if let httpError {
@@ -76,7 +73,23 @@ enum DefaultBrowser {
                                       fallbackBrowser: BrowserResolver.browserForNewConfig())
         if config.browser.caseInsensitiveCompare(Constants.bundleID) == .orderedSame {
             config.browser = BrowserResolver.browserForNewConfig()
-            try? ConfigStore.save(config, to: configURL)
+        }
+
+        // Becoming the default browser is only safe once the browser we are displacing
+        // is on disk. If that write fails and we took over anyway, there would be no
+        // record of where links used to go, and --restore could only guess.
+        do {
+            try ConfigStore.save(config, to: configURL)
+        } catch {
+            FileHandle.standardError.write(Data("""
+                which-account: could not write \(configURL.path): \
+                \(error.localizedDescription)
+                Refusing to become the default browser, because the browser being \
+                replaced (\(config.browser)) could not be recorded.
+
+                """.utf8))
+            completion(1)
+            return
         }
 
         print("which-account: current browser recorded as \(config.browser)")
@@ -91,12 +104,6 @@ enum DefaultBrowser {
             switch outcome {
             case .confirmed:
                 print("which-account: registered as the default handler for http and https.")
-                completion(0)
-            case .unsupportedOS:
-                print("""
-                      which-account: on macOS 13 the default browser must be set by hand — \
-                      System Settings > Desktop & Dock > Default web browser > which-account.
-                      """)
                 completion(0)
             case let .failed(message):
                 FileHandle.standardError.write(
@@ -127,12 +134,6 @@ enum DefaultBrowser {
             switch outcome {
             case .confirmed:
                 print("which-account: default browser handed back to \(target).")
-                completion(0)
-            case .unsupportedOS:
-                print("""
-                      which-account: on macOS 13, set your browser back by hand — \
-                      System Settings > Desktop & Dock > Default web browser.
-                      """)
                 completion(0)
             case let .failed(message):
                 FileHandle.standardError.write(

@@ -64,9 +64,21 @@ public enum DecisionEngine {
 
         // A rule wins over everything, but only while the profile it names still exists;
         // a renamed or deleted profile falls through to the picker rather than failing.
-        if let rule = RuleMatcher.match(url: url, rules: input.rules),
-           let profile = input.profileSet.profile(withDirectory: rule.profile) {
-            return .openProfile(profile: profile, matchedRule: rule)
+        if let rule = RuleMatcher.match(url: url, rules: input.rules) {
+            if let profile = input.profileSet.profile(withDirectory: rule.profile) {
+                return .openProfile(profile: profile, matchedRule: rule)
+            }
+            // Nothing was read from Local State at all — the file may be missing or
+            // locked. We still know the directory name, which is all the browser
+            // needs, so honour the rule rather than quietly ignoring it.
+            if input.profileSet.profiles.isEmpty {
+                return .openProfile(profile: ChromiumProfile(directory: rule.profile,
+                                                             name: rule.profile,
+                                                             userName: nil,
+                                                             themeColor: nil,
+                                                             activeTime: 0),
+                                    matchedRule: rule)
+            }
         }
 
         switch input.profileSet.profiles.count {

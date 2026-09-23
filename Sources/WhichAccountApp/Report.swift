@@ -4,6 +4,7 @@ import WhichAccountCore
 /// `--dry-run`: say exactly what a real run would do, and do none of it.
 enum Report {
     static func dryRun(_ router: Router) {
+        router.warnIfConfigUnreadable()
         var out = ""
         func line(_ label: String, _ value: String) {
             out += label.padding(toLength: 12, withPad: " ", startingAt: 0) + value + "\n"

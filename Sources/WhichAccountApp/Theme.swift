@@ -107,11 +107,20 @@ enum Metrics {
         return CGFloat(count) * rowHeight + CGFloat(count - 1) * rowGap
     }
 
-    static func panelHeight(rowCount: Int) -> CGFloat {
+    /// Everything except the rows: header, separators and footer.
+    static var chromeHeight: CGFloat {
         topPadding
             + headerHeight + sectionGap
-            + rowsHeight(count: rowCount) + sectionGap
+            + sectionGap
             + dividerHeight + sectionGap
             + footerHeight + bottomPadding
+    }
+
+    static func panelHeight(rowsHeight: CGFloat) -> CGFloat {
+        chromeHeight + rowsHeight
+    }
+
+    static func panelHeight(rowCount: Int) -> CGFloat {
+        panelHeight(rowsHeight: rowsHeight(count: rowCount))
     }
 }

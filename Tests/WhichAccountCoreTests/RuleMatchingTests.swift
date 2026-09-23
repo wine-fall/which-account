@@ -24,6 +24,15 @@ final class GlobTests: XCTestCase {
         XCTAssertTrue(Glob.matches(pattern: "LINEAR.app/*", subject: "linear.app/X"))
     }
 
+    /// A subject containing a literal `*` used to satisfy the pattern's `*` by plain
+    /// equality, consuming the wildcard and failing the rest of the match.
+    func testLiteralStarInSubjectDoesNotEatTheWildcard() {
+        XCTAssertTrue(Glob.matches(pattern: "*", subject: "*foo"))
+        XCTAssertTrue(Glob.matches(pattern: "github.com/search?q=*",
+                                   subject: "github.com/search?q=*foo"))
+        XCTAssertTrue(Glob.matches(pattern: "*/x", subject: "*/x"))
+    }
+
     func testManyStarsDoNotExplode() {
         let pattern = String(repeating: "*a", count: 24) + "*"
         let subject = String(repeating: "a", count: 200)
@@ -42,6 +51,23 @@ final class WebURLTests: XCTestCase {
                        "linear.app/acme/issue/ENG-1234")
         XCTAssertEqual(WebURL("https://example.com/")?.schemeless, "example.com")
         XCTAssertEqual(WebURL("https://youtube.com/watch?v=abc")?.schemeless, "youtube.com/watch?v=abc")
+    }
+
+    /// Only a bare host loses its trailing slash. Stripping it from a real path
+    /// stopped `example.com/acme/*` matching `https://example.com/acme/`.
+    func testTrailingSlashIsKeptOnRealPaths() {
+        XCTAssertEqual(WebURL("https://example.com/acme/")?.schemeless, "example.com/acme/")
+        XCTAssertEqual(WebURL("https://example.com/")?.schemeless, "example.com")
+        XCTAssertEqual(WebURL("https://example.com")?.schemeless, "example.com")
+    }
+
+    func testGlobStillMatchesADirectoryURL() {
+        let rules = [Rule(pattern: "example.com/acme/*", profile: "Work"),
+                     Rule(pattern: "example.com", profile: "Personal")]
+        XCTAssertEqual(RuleMatcher.match(url: WebURL("https://example.com/acme/")!,
+                                         rules: rules)?.profile, "Work")
+        XCTAssertEqual(RuleMatcher.match(url: WebURL("https://example.com/")!,
+                                         rules: rules)?.profile, "Personal")
     }
 
     func testHostIsLowercased() {

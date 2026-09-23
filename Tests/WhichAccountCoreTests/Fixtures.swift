@@ -66,6 +66,21 @@ enum Fixtures {
     }
     """.data(using: .utf8)!
 
+    /// `last_used` is NOT the most recently active profile, so a preselection that
+    /// simply returns row 0 cannot pass.
+    static let lastUsedIsNotFirstRow = """
+    {
+      "profile": {
+        "last_used": "Default",
+        "profiles_order": ["Default", "Profile 1"],
+        "info_cache": {
+          "Default":   { "active_time": 100.0, "name": "Personal", "user_name": "personal@example.com" },
+          "Profile 1": { "active_time": 900.0, "name": "Work",     "user_name": "work@example.com" }
+        }
+      }
+    }
+    """.data(using: .utf8)!
+
     /// Safari-shaped nonsense: no `profile` key at all.
     static let notChromium = #"{"some":"other file"}"#.data(using: .utf8)!
 }

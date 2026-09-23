@@ -23,8 +23,14 @@ public struct WebURL: Equatable, Sendable {
         if let range = rest.range(of: "://") {
             rest = String(rest[range.upperBound...])
         }
-        // A bare host keeps no trailing slash, so "example.com/" reads as "example.com".
-        if rest.hasSuffix("/") { rest.removeLast() }
+        // "example.com/" reads as "example.com", but only when the slash IS the whole
+        // path. Stripping it from "example.com/acme/" would stop `example.com/acme/*`
+        // matching a URL that is plainly inside that path.
+        let path = components.path
+        if rest.hasSuffix("/") && (path == "/" || path.isEmpty)
+            && components.query == nil && components.fragment == nil {
+            rest.removeLast()
+        }
         self.schemeless = rest
     }
 }

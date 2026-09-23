@@ -58,6 +58,8 @@ final class PickerController: NSObject {
     private var rows: [ProfileRowView] = []
     private var footer: FooterView!
     private var window: PickerWindow!
+    /// Set only when the rows had to be clamped to fit the screen.
+    private var rowsScrollView: NSScrollView?
     private var finished = false
 
     init(profiles: [ChromiumProfile],
@@ -74,7 +76,16 @@ final class PickerController: NSObject {
     // MARK: presentation
 
     func show() {
-        let height = Metrics.panelHeight(rowCount: profiles.count)
+        let screen = activeScreen()
+
+        // Enough profiles would otherwise push the footer, and some of the rows,
+        // off the bottom of the display. Clamp the row area and let it scroll.
+        let margin: CGFloat = 80
+        let available = (screen?.visibleFrame.height ?? 800) - margin - Metrics.chromeHeight
+        let fullRows = Metrics.rowsHeight(count: profiles.count)
+        let visibleRows = max(Metrics.rowHeight, min(fullRows, available))
+
+        let height = Metrics.panelHeight(rowsHeight: visibleRows)
         let frame = NSRect(x: 0, y: 0, width: Metrics.panelWidth, height: height)
 
         window = PickerWindow(contentRect: frame,
@@ -92,10 +103,10 @@ final class PickerController: NSObject {
         let root = PickerRootView(frame: frame)
         root.onKeyDown = { [weak self] event in self?.handle(event) ?? false }
         root.onCancel = { [weak self] in self?.finish(nil) }
-        buildContents(in: root)
+        buildContents(in: root, fullRowsHeight: fullRows, visibleRowsHeight: visibleRows)
         window.contentView = root
 
-        centerOnActiveScreen()
+        centerOn(screen)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(root)
@@ -105,11 +116,14 @@ final class PickerController: NSObject {
     /// Deliberately no dismiss-on-focus-loss: LaunchServices launches us while another
     /// app is frontmost, and a race there would cancel the panel before it is seen.
     /// Escape is the only way to close without opening anything.
-    private func centerOnActiveScreen() {
+    private func activeScreen() -> NSScreen? {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { $0.frame.contains(mouse) }
+        return NSScreen.screens.first { $0.frame.contains(mouse) }
             ?? NSScreen.main
             ?? NSScreen.screens.first
+    }
+
+    private func centerOn(_ screen: NSScreen?) {
         guard let visible = screen?.visibleFrame else { return }
         let size = window.frame.size
         window.setFrameOrigin(NSPoint(
@@ -118,7 +132,9 @@ final class PickerController: NSObject {
         ))
     }
 
-    private func buildContents(in root: NSView) {
+    private func buildContents(in root: NSView,
+                               fullRowsHeight: CGFloat,
+                               visibleRowsHeight: CGFloat) {
         let contentWidth = Metrics.panelWidth - 2 * Metrics.sidePadding
         let textX = Metrics.sidePadding + Metrics.textInset
         let textWidth = Metrics.panelWidth - 2 * textX
@@ -139,17 +155,36 @@ final class PickerController: NSObject {
         root.addSubview(subtitle)
         y += Metrics.urlHeight + Metrics.sectionGap
 
+        let rowsContainer = FlippedView(frame: NSRect(x: 0, y: 0,
+                                                     width: contentWidth,
+                                                     height: fullRowsHeight))
+        var rowY: CGFloat = 0
         for (index, profile) in profiles.enumerated() {
             let row = ProfileRowView(profile: profile, number: index + 1, width: contentWidth)
-            row.frame.origin = NSPoint(x: Metrics.sidePadding, y: y)
+            row.frame.origin = NSPoint(x: 0, y: rowY)
             row.isSelected = (index == selectedIndex)
             row.onClick = { [weak self] in self?.choose(index: index) }
-            root.addSubview(row)
+            rowsContainer.addSubview(row)
             rows.append(row)
-            y += Metrics.rowHeight + Metrics.rowGap
+            rowY += Metrics.rowHeight + Metrics.rowGap
         }
-        y -= Metrics.rowGap
-        y += Metrics.sectionGap
+
+        let rowsFrame = NSRect(x: Metrics.sidePadding, y: y,
+                               width: contentWidth, height: visibleRowsHeight)
+        if visibleRowsHeight < fullRowsHeight {
+            let scroll = NSScrollView(frame: rowsFrame)
+            scroll.drawsBackground = false
+            scroll.hasVerticalScroller = true
+            scroll.scrollerStyle = .overlay
+            scroll.autohidesScrollers = true
+            scroll.documentView = rowsContainer
+            root.addSubview(scroll)
+            rowsScrollView = scroll
+        } else {
+            rowsContainer.frame = rowsFrame
+            root.addSubview(rowsContainer)
+        }
+        y += visibleRowsHeight + Metrics.sectionGap
 
         let divider = DividerView(frame: NSRect(x: textX, y: y,
                                                 width: textWidth, height: Metrics.dividerHeight))
@@ -188,6 +223,10 @@ final class PickerController: NSObject {
         selectedIndex = index
         for (position, row) in rows.enumerated() {
             row.isSelected = (position == selectedIndex)
+        }
+        // Keep the highlight reachable when the list is scrolling.
+        if rowsScrollView != nil {
+            rows[index].scrollToVisible(rows[index].bounds)
         }
     }
 

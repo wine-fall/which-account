@@ -123,6 +123,21 @@ Created on first run.
   `github.com/acme/*` beats a checkbox-written `github.com`.
 - `_comment` is preserved anywhere it appears.
 
+Matching is case-insensitive throughout, including paths. URL paths are technically
+case-sensitive, so `example.com/Work/*` and `example.com/work/*` cannot select
+different profiles — a deliberate trade for rules behaving the way people expect
+when they type them.
+
+If the file cannot be parsed it is **not** overwritten: it is moved to
+`config.invalid-<timestamp>.json`, a fresh one is written so links keep working, and
+the reason is printed. Fix the JSON and move it back.
+
+> **`XDG_CONFIG_HOME` and GUI launches.** macOS launches which-account through
+> LaunchServices, which does not see variables exported in your shell. If
+> `XDG_CONFIG_HOME` is set only in `.zshrc`, running `which-account` from a terminal
+> and clicking a link will read *different* config files. Either leave it unset, or
+> set it for the GUI session too (`launchctl setenv XDG_CONFIG_HOME ...`).
+
 Supported browsers: Google Chrome (+ Beta/Dev/Canary), Microsoft Edge, Brave, Chromium,
 Vivaldi. Profiles are read from that browser's `Local State`; profiles that are not
 signed in are listed too, showing the profile name and *Not signed in*.

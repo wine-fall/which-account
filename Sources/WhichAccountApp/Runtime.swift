@@ -5,7 +5,7 @@ enum Constants {
     static let bundleID = "dev.wine-fall.which-account"
     /// Never "the system default" — that is us, and we would hand the URL to ourselves.
     static let lastResortBrowser = "com.apple.Safari"
-    static let version = "1.0.0"
+    static let version = "1.0.1"
 }
 
 enum BrowserResolver {
@@ -55,14 +55,20 @@ struct LaunchPlan {
         return args
     }
 
+    /// Single-quoted, because this line is printed for people to copy. Double quotes
+    /// would leave `$`, backticks and backslashes live, so a URL containing `$(id)`
+    /// would run a command when pasted.
     var shellCommand: String {
         arguments.map { argument in
-            argument.contains(where: { " \"'$&|;()<>*?".contains($0) })
-                ? "\"\(argument.replacingOccurrences(of: "\"", with: "\\\""))\""
-                : argument
+            guard argument.contains(where: { !"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-./:=@".contains($0) }) else {
+                return argument
+            }
+            return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
         }.joined(separator: " ")
     }
 
+    /// Returns false when the browser could not be launched. The caller must not
+    /// report success in that case: the URL would simply vanish.
     @discardableResult
     func run() -> Bool {
         let process = Process()
@@ -71,7 +77,12 @@ struct LaunchPlan {
         do {
             try process.run()
             process.waitUntilExit()
-            return process.terminationStatus == 0
+            guard process.terminationStatus == 0 else {
+                FileHandle.standardError.write(Data(
+                    "which-account: \(shellCommand) exited \(process.terminationStatus)\n".utf8))
+                return false
+            }
+            return true
         } catch {
             FileHandle.standardError.write(
                 Data("which-account: failed to launch browser: \(error)\n".utf8))
@@ -90,13 +101,16 @@ struct Router {
     let browser: ChromiumBrowser?
     let appURL: URL?
     let profileSet: ChromiumProfileSet
+    let configOutcome: ConfigStore.LoadOutcome
 
     init(rawURL: String) {
         self.rawURL = rawURL
         self.webURL = WebURL(rawURL)
         self.configURL = ConfigStore.configURL()
-        self.config = ConfigStore.load(at: configURL,
-                                       fallbackBrowser: BrowserResolver.browserForNewConfig())
+        let loaded = ConfigStore.loadDetailed(at: configURL,
+                                              fallbackBrowser: BrowserResolver.browserForNewConfig())
+        self.config = loaded.config
+        self.configOutcome = loaded.outcome
 
         // A config that somehow points at us would loop forever; treat it as unset.
         let configured = config.browser.caseInsensitiveCompare(Constants.bundleID) == .orderedSame
@@ -131,6 +145,19 @@ struct Router {
             return nil
         }
         return LaunchPlan(appURL: safari, profileDirectory: nil, url: rawURL)
+    }
+
+    /// Say so when the config could not be parsed. Moving it aside silently would
+    /// leave the user wondering where their rules went.
+    func warnIfConfigUnreadable() {
+        guard case let .unreadable(backup) = configOutcome else { return }
+        let where_ = backup.map { "moved to \($0.lastPathComponent)" } ?? "left in place"
+        FileHandle.standardError.write(Data("""
+            which-account: \(configURL.path) could not be parsed, so your rules were \
+            not applied. The file was \(where_) and a fresh one written. \
+            Fix the JSON and move it back.
+
+            """.utf8))
     }
 
     /// Where to look for the browser's `Local State`.

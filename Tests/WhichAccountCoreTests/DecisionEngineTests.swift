@@ -99,6 +99,23 @@ final class DecisionEngineTests: XCTestCase {
         XCTAssertEqual(decision, .fallbackSafari(missingBundleID: "com.google.Chrome"))
     }
 
+    /// Local State could not be read at all. The rule names a directory, which is
+    /// the only thing the browser actually needs, so it must still be honoured
+    /// rather than silently degrading to "open in whatever profile is in front".
+    func testRuleIsHonouredWhenLocalStateCouldNotBeRead() {
+        let none = ChromiumProfileSet(profiles: [], lastUsed: nil)
+        let rules = [Rule(pattern: "linear.app", profile: "Profile 3")]
+
+        let decision = DecisionEngine.decide(
+            input(url: "https://linear.app/x", rules: rules, profiles: none))
+
+        guard case let .openProfile(profile, matchedRule) = decision else {
+            return XCTFail("expected openProfile, got \(decision)")
+        }
+        XCTAssertEqual(profile.directory, "Profile 3")
+        XCTAssertEqual(matchedRule.pattern, "linear.app")
+    }
+
     func testRuleNamingADeletedProfileFallsThroughToThePicker() {
         let rules = [Rule(pattern: "linear.app", profile: "Profile 9")]
         let decision = DecisionEngine.decide(input(url: "https://linear.app/x", rules: rules))

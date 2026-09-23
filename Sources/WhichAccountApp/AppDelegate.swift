@@ -16,9 +16,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Development aid: pin the panel to one appearance so both can be reviewed
     /// without flipping the whole system. Unset means follow the system, as shipped.
     private let appearance: NSAppearance.Name?
+
+    /// URLs waiting their turn. LaunchServices delivers to the running process, so a
+    /// second link can arrive while the first one's picker is still open; dropping it
+    /// would lose the link with no error anywhere.
+    private var pending: [String] = []
+    private var isRouting = false
+    private var receivedAnyURL = false
+    /// Non-zero if any hand-off to the browser failed.
+    private var exitCode: Int32 = 0
+
     private var router: Router?
     private var picker: PickerController?
-    private var handled = false
 
     /// If LaunchServices launches us but never delivers a URL, don't linger.
     private let appleEventTimeout: TimeInterval = 10
@@ -42,7 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch mode {
         case let .route(url):
-            route(url, openForReal: true)
+            enqueue(url)
 
         case let .showPicker(url):
             showPickerOnly(url)
@@ -55,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         case .awaitAppleEvent:
             DispatchQueue.main.asyncAfter(deadline: .now() + appleEventTimeout) { [weak self] in
-                guard let self, !self.handled else { return }
+                guard let self, !self.receivedAnyURL else { return }
                 self.finish(0)
             }
         }
@@ -66,53 +75,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor,
                                     withReplyEvent reply: NSAppleEventDescriptor) {
         guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue else {
-            finish(0)
             return
         }
-        route(raw, openForReal: true)
+        enqueue(raw)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let first = urls.first else { return }
-        route(first.absoluteString, openForReal: true)
+        for url in urls {
+            enqueue(url.absoluteString)
+        }
+    }
+
+    private func enqueue(_ raw: String) {
+        receivedAnyURL = true
+        pending.append(raw)
+        routeNextIfIdle()
+    }
+
+    private func routeNextIfIdle() {
+        guard !isRouting else { return }
+        guard !pending.isEmpty else {
+            finish(exitCode)
+            return
+        }
+        isRouting = true
+        route(pending.removeFirst())
+    }
+
+    private func finishedRouting() {
+        isRouting = false
+        routeNextIfIdle()
+    }
+
+    /// Record a failed hand-off so the process does not report success after
+    /// silently dropping the URL.
+    private func handOff(_ plan: LaunchPlan?, describing raw: String) {
+        guard let plan else {
+            FileHandle.standardError.write(
+                Data("which-account: no browser available for \(raw)\n".utf8))
+            exitCode = 1
+            return
+        }
+        if !plan.run() {
+            exitCode = 1
+        }
     }
 
     // MARK: routing
 
-    private func route(_ raw: String, openForReal: Bool) {
-        guard !handled else { return }
-        handled = true
-
+    private func route(_ raw: String) {
         let router = Router(rawURL: raw)
         self.router = router
+        router.warnIfConfigUnreadable()
 
         switch router.decision {
         case .passthrough:
-            router.plan(profileDirectory: nil)?.run()
-            finish(0)
+            handOff(router.plan(profileDirectory: nil), describing: raw)
+            finishedRouting()
 
         case let .openProfile(profile, _):
-            router.plan(profileDirectory: profile.directory)?.run()
-            finish(0)
+            handOff(router.plan(profileDirectory: profile.directory), describing: raw)
+            finishedRouting()
 
         case let .fallbackSafari(missing):
             DefaultBrowser.warnMissing(bundleID: missing)
-            router.safariPlan()?.run()
-            finish(0)
+            handOff(router.safariPlan(), describing: raw)
+            finishedRouting()
 
         case let .showPicker(profiles, preselected):
             guard let web = router.webURL else {
-                finish(0)
+                finishedRouting()
                 return
             }
-            present(profiles: profiles, preselected: preselected, url: web, openForReal: openForReal)
+            present(profiles: profiles, preselected: preselected, url: web, openForReal: true)
         }
     }
 
     /// `--show-picker`: always show the panel, whatever the rules say, and open nothing.
     private func showPickerOnly(_ raw: String) {
-        guard !handled else { return }
-        handled = true
+        receivedAnyURL = true
+        isRouting = true
 
         let router = Router(rawURL: raw)
         self.router = router
@@ -145,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             guard let choice else {
                 if !openForReal { print("cancelled — nothing opened") }
-                self.finish(0)
+                self.finishedRouting()
                 return
             }
 
@@ -156,11 +198,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             if openForReal {
-                self.router?.plan(profileDirectory: choice.profile.directory)?.run()
+                self.handOff(self.router?.plan(profileDirectory: choice.profile.directory),
+                             describing: url.absolute)
             } else {
                 self.printChoice(choice, url: url, wroteRule: wroteRule)
             }
-            self.finish(0)
+            self.finishedRouting()
         }
         picker = controller
         controller.show()

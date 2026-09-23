@@ -59,12 +59,35 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(text.contains("\\/"))
     }
 
-    func testMalformedConfigIsReplacedWithADefault() throws {
+    /// A hand-edit that leaves the file unparseable must not cost the user every rule
+    /// they wrote. The broken file is moved aside, not overwritten in place.
+    /// (A trailing comma alone is tolerated by Foundation, so this uses a missing brace.)
+    func testMalformedConfigIsPreservedNotDestroyed() throws {
         let url = tempDir.appendingPathComponent("config.json")
-        try "{ not json".write(to: url, atomically: true, encoding: .utf8)
+        let original = """
+            { "browser": "com.google.Chrome", "rules": [ { "pattern": "x", "profile": "y" }
+            """
+        try original.write(to: url, atomically: true, encoding: .utf8)
 
-        let config = ConfigStore.load(at: url, fallbackBrowser: "com.google.Chrome")
-        XCTAssertEqual(config.browser, "com.google.Chrome")
+        let result = ConfigStore.loadDetailed(at: url, fallbackBrowser: "com.apple.Safari")
+
+        guard case let .unreadable(backup) = result.outcome else {
+            return XCTFail("expected .unreadable, got \(result.outcome)")
+        }
+        let backupURL = try XCTUnwrap(backup)
+        XCTAssertEqual(try String(contentsOf: backupURL, encoding: .utf8), original)
+
+        // A usable config is still written, so the next link is not dropped.
+        XCTAssertEqual(result.config.browser, "com.apple.Safari")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    func testOutcomeDistinguishesCreatedFromLoaded() throws {
+        let url = tempDir.appendingPathComponent("config.json")
+        XCTAssertEqual(ConfigStore.loadDetailed(at: url, fallbackBrowser: "com.google.Chrome").outcome,
+                       .created)
+        XCTAssertEqual(ConfigStore.loadDetailed(at: url, fallbackBrowser: "com.google.Chrome").outcome,
+                       .loaded)
     }
 
     func testUpsertAddsThenReplacesByPattern() {

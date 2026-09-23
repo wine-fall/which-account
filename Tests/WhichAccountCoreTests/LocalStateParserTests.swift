@@ -46,9 +46,15 @@ final class LocalStateParserTests: XCTestCase {
         XCTAssertNil(guest.themeColor)
     }
 
+    /// The fixture deliberately puts `last_used` on the *least* recently active
+    /// profile, so returning row 0 unconditionally would fail this.
     func testPreselectionFollowsLastUsedNotRowOrder() throws {
-        let set = try LocalStateParser.parse(data: Fixtures.threeProfiles)
-        XCTAssertEqual(set.profiles[set.preselectedIndex].directory, "Profile 3")
+        let set = try LocalStateParser.parse(data: Fixtures.lastUsedIsNotFirstRow)
+
+        XCTAssertEqual(set.profiles.map(\.directory), ["Profile 1", "Default"])
+        XCTAssertEqual(set.lastUsed, "Default")
+        XCTAssertEqual(set.preselectedIndex, 1)
+        XCTAssertEqual(set.profiles[set.preselectedIndex].directory, "Default")
     }
 
     func testPreselectionFallsBackToFirstRowWhenLastUsedIsUnknown() {

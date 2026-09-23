@@ -211,6 +211,11 @@ final class FooterView: NSView {
     }
 }
 
+/// A top-down container, so rows can be positioned from the top like everything else.
+final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 /// A 1px hairline.
 final class DividerView: NSView {
     override var isFlipped: Bool { true }

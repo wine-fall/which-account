@@ -68,15 +68,47 @@ public enum ConfigStore {
             .appendingPathComponent("config.json", isDirectory: false)
     }
 
+    public enum LoadOutcome: Equatable, Sendable {
+        case loaded
+        case created
+        /// The file exists but could not be parsed. `backup` is where the original
+        /// was moved, when it could be moved at all.
+        case unreadable(backup: URL?)
+    }
+
+    public struct LoadResult: Sendable {
+        public let config: Config
+        public let outcome: LoadOutcome
+    }
+
     /// Read the config, creating it with `fallbackBrowser` when it isn't there yet.
-    public static func load(at url: URL, fallbackBrowser: String) -> Config {
-        if let data = try? Data(contentsOf: url),
-           let config = try? JSONDecoder().decode(Config.self, from: data) {
-            return config
+    ///
+    /// A file that exists but does not parse is **never** silently replaced: one
+    /// stray comma would otherwise cost the user every rule they had written, and
+    /// the browser recorded at install time along with them. The broken file is
+    /// moved aside first, so it can be repaired by hand.
+    public static func loadDetailed(at url: URL, fallbackBrowser: String) -> LoadResult {
+        let data = try? Data(contentsOf: url)
+
+        if let data {
+            if let config = try? JSONDecoder().decode(Config.self, from: data) {
+                return LoadResult(config: config, outcome: .loaded)
+            }
+            let backup = url.deletingLastPathComponent()
+                .appendingPathComponent("config.invalid-\(Int(Date().timeIntervalSince1970)).json")
+            let moved = (try? FileManager.default.moveItem(at: url, to: backup)) != nil
+            let fresh = Config.makeDefault(browser: fallbackBrowser)
+            try? save(fresh, to: url)
+            return LoadResult(config: fresh, outcome: .unreadable(backup: moved ? backup : nil))
         }
+
         let fresh = Config.makeDefault(browser: fallbackBrowser)
         try? save(fresh, to: url)
-        return fresh
+        return LoadResult(config: fresh, outcome: .created)
+    }
+
+    public static func load(at url: URL, fallbackBrowser: String) -> Config {
+        loadDetailed(at: url, fallbackBrowser: fallbackBrowser).config
     }
 
     public static func save(_ config: Config, to url: URL) throws {
