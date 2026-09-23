@@ -1,70 +1,36 @@
 import AppKit
 import WhichAccountCore
+import WhichAccountKit
 
-let arguments = Array(CommandLine.arguments.dropFirst())
+let command = Command.parse(Array(CommandLine.arguments.dropFirst()))
+let usage = Report.usage(configPath: ConfigStore.configURL().path)
 
-/// Options that need no GUI are answered and the process exits before AppKit starts.
-func urlArgument(after flag: String) -> String {
-    guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
-        FileHandle.standardError.write(Data("which-account: \(flag) needs a URL\n".utf8))
-        exit(2)
-    }
-    return arguments[index + 1]
-}
-
-/// `--appearance light|dark` pins the panel's appearance for review.
-func appearanceOverride() -> NSAppearance.Name? {
-    guard let index = arguments.firstIndex(of: "--appearance"), index + 1 < arguments.count else {
-        return nil
-    }
-    switch arguments[index + 1].lowercased() {
-    case "light": return .aqua
-    case "dark": return .darkAqua
-    default:
-        FileHandle.standardError.write(Data("which-account: --appearance takes light or dark\n".utf8))
-        exit(2)
-    }
-}
-
-let mode: Mode
-
-switch arguments.first {
-case nil:
-    mode = .awaitAppleEvent
-
-case "--help", "-h":
-    print(Report.usage)
+// Anything that needs no GUI is answered before AppKit starts.
+switch command {
+case .help:
+    print(usage)
     exit(0)
-
-case "--version":
+case .version:
     print(Constants.version)
     exit(0)
-
-case "--dry-run":
-    Report.dryRun(Router(rawURL: urlArgument(after: "--dry-run")))
+case let .dryRun(url):
+    let router = Router(rawURL: url, environment: .live)
+    if let warning = router.configUnreadableWarning {
+        StandardConsole().err(warning)
+    }
+    print(Report.dryRun(router), terminator: "")
     exit(0)
-
-case "--show-picker":
-    mode = .showPicker(urlArgument(after: "--show-picker"))
-
-case "--setup":
-    mode = .setup
-
-case "--restore":
-    mode = .restore
-
-case let first? where first.hasPrefix("-"):
-    FileHandle.standardError.write(Data("which-account: unknown option \(first)\n".utf8))
-    print(Report.usage)
+case let .invalid(message):
+    StandardConsole().err("which-account: \(message)")
+    print(usage)
     exit(2)
-
-case let first?:
-    mode = .route(first)
+default:
+    break
 }
 
 let app = NSApplication.shared
 // No Dock icon, no menu bar: we are a one-shot dialog.
 app.setActivationPolicy(.accessory)
-let delegate = AppDelegate(mode: mode, appearance: appearanceOverride())
+let delegate = AppDelegate(command: command)
 app.delegate = delegate
 app.run()

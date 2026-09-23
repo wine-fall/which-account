@@ -30,9 +30,10 @@ The picker is the fallback, not the product. Once you have ticked
 
 ## Install
 
-Needs macOS 13+ and current Xcode Command Line Tools (`xcode-select --install`). No
-Xcode, no dependencies, no developer account — a locally compiled binary carries no
-quarantine flag, so nothing needs signing.
+Needs macOS 13+. No dependencies and no Apple developer account: the app is built on
+your machine, so it carries no quarantine flag, and it is ad-hoc signed locally, which
+is free. Notarization — the part that costs money — only applies to distributing
+prebuilt binaries.
 
 ### Homebrew
 
@@ -53,16 +54,18 @@ cd which-account
 make install
 ```
 
-`make install` does three things:
+This needs current Xcode Command Line Tools (`xcode-select --install`). `make install`:
 
 1. builds `.build/release/which-account` and assembles `~/Applications/which-account.app`
-   around it (`LSUIElement`, so no Dock icon and no menu bar);
-2. registers the bundle with LaunchServices;
-3. records whichever browser is currently your default into the config, then asks macOS
-   to make which-account the handler for `http` and `https`.
+   around it (`LSUIElement`, so no Dock icon and no menu bar), then ad-hoc signs the
+   bundle — without that, LaunchServices will not accept it as a browser;
+2. runs `which-account --setup`, which registers the bundle with LaunchServices, records
+   whichever browser is currently your default into the config, and asks macOS to make
+   which-account the handler for `http` and `https`.
 
-**macOS will show its own confirmation dialog once, at step 3.** Nothing changes until
-you accept it. That is the only time the app touches a system setting.
+**macOS will show its own confirmation dialog once, in step 2.** Nothing changes until
+you accept it. That is the only time the app touches a system setting. Running
+`--setup` again when which-account is already the default does nothing.
 
 If your current browser has no profiles (Safari, Firefox), install still works and tells
 you so — every link will simply pass straight through.
@@ -178,9 +181,27 @@ Safari and warns you once — never to "the system default", which would be itse
 
 ```sh
 make build    # debug build
-make test     # unit tests: Local State parsing, rules, routing, keymap
+make test     # unit tests
 make release  # optimised build
 ```
+
+The code is in three layers, so that almost all of it is tested without a window,
+a GUI session or touching system settings:
+
+| Target | What it holds | Depends on |
+|---|---|---|
+| `WhichAccountCore` | Local State parsing, config and rules, the routing decision, the picker's keymap — pure functions | Foundation |
+| `WhichAccountKit` | Everything the app decides and does: `Router`, the URL queue, `--setup` / `--restore`, launching the browser, argument parsing, `--dry-run` output. LaunchServices, process launching and the default-browser call sit behind protocols | Core |
+| `WhichAccountApp` | The real implementations of those protocols (NSWorkspace, `lsregister`), the AppKit panel, `main.swift` | Kit, AppKit |
+
+The tests in `WhichAccountKitTests` swap in fakes for the protocols, so they cover the
+paths that matter most and are hardest to exercise by hand — a URL arriving while a
+picker is open, a config that names which-account itself, `--setup` run outside the
+bundle or unable to record the browser it displaces, a failed hand-off to the browser —
+without changing anything on the machine. CI runs the suite on every push.
+
+What is still checked by hand: the panel's rendering and focus behaviour, and the real
+system confirmation dialog.
 
 `NSHomeDirectory()` ignores `$HOME`, so `WHICH_ACCOUNT_HOME` points profile discovery
 at another directory. Screenshots and manual testing use it, so that neither is ever
@@ -196,11 +217,6 @@ JSON
 
 WHICH_ACCOUNT_HOME=/tmp/demo .build/release/which-account --show-picker https://github.com/login/device
 ```
-
-The routing policy, the rule matching, the `Local State` parsing and the panel's keyboard
-contract are all pure functions in `WhichAccountCore` with no AppKit in sight, so they are
-tested directly rather than through a window. `WhichAccountApp` is the AppKit shell around
-them.
 
 ## Licence
 

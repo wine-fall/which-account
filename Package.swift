@@ -9,7 +9,13 @@ let package = Package(
     ],
     targets: [
         .target(name: "WhichAccountCore"),
-        .executableTarget(name: "WhichAccountApp", dependencies: ["WhichAccountCore"]),
-        .testTarget(name: "WhichAccountCoreTests", dependencies: ["WhichAccountCore"])
+        // Everything the app decides and does, behind protocols, with no AppKit —
+        // so it can be tested without a window, a GUI session or system settings.
+        .target(name: "WhichAccountKit", dependencies: ["WhichAccountCore"]),
+        .executableTarget(name: "WhichAccountApp",
+                          dependencies: ["WhichAccountCore", "WhichAccountKit"]),
+        .testTarget(name: "WhichAccountCoreTests", dependencies: ["WhichAccountCore"]),
+        .testTarget(name: "WhichAccountKitTests",
+                    dependencies: ["WhichAccountKit", "WhichAccountCore"])
     ]
 )

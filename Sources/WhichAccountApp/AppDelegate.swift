@@ -1,30 +1,15 @@
 import AppKit
 import WhichAccountCore
-
-enum Mode {
-    /// A URL on the command line: route it now.
-    case route(String)
-    /// Launched by LaunchServices: wait for the kAEGetURL Apple Event.
-    case awaitAppleEvent
-    case showPicker(String)
-    case setup
-    case restore
-}
+import WhichAccountKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let mode: Mode
-    /// Development aid: pin the panel to one appearance so both can be reviewed
-    /// without flipping the whole system. Unset means follow the system, as shipped.
-    private let appearance: NSAppearance.Name?
+    private let command: Command
+    private let console: Console = StandardConsole()
+    private let runner: ProcessRunner = SystemProcessRunner()
 
-    /// URLs waiting their turn. LaunchServices delivers to the running process, so a
-    /// second link can arrive while the first one's picker is still open; dropping it
-    /// would lose the link with no error anywhere.
-    private var pending: [String] = []
-    private var isRouting = false
-    private var receivedAnyURL = false
-    /// Non-zero if any hand-off to the browser failed.
-    private var exitCode: Int32 = 0
+    private lazy var dispatcher = URLDispatcher(
+        route: { [unowned self] raw, done in self.route(raw, done: done) },
+        finish: { [unowned self] code in self.finish(code) })
 
     private var router: Router?
     private var picker: PickerController?
@@ -32,41 +17,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// If LaunchServices launches us but never delivers a URL, don't linger.
     private let appleEventTimeout: TimeInterval = 10
 
-    init(mode: Mode, appearance: NSAppearance.Name? = nil) {
-        self.mode = mode
-        self.appearance = appearance
+    init(command: Command) {
+        self.command = command
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if let appearance {
-            NSApp.appearance = NSAppearance(named: appearance)
-        }
-
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURL(_:withReplyEvent:)),
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL))
 
-        switch mode {
+        switch command {
         case let .route(url):
-            enqueue(url)
+            dispatcher.enqueue(url)
 
-        case let .showPicker(url):
+        case let .showPicker(url, appearance):
+            if let appearance {
+                NSApp.appearance = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)
+            }
             showPickerOnly(url)
 
         case .setup:
-            DefaultBrowser.setup { self.finish(Int32($0)) }
+            SetupFlow.setup(.live) { self.finish($0) }
 
         case .restore:
-            DefaultBrowser.restore { self.finish(Int32($0)) }
+            SetupFlow.restore(.live) { self.finish($0) }
 
         case .awaitAppleEvent:
             DispatchQueue.main.asyncAfter(deadline: .now() + appleEventTimeout) { [weak self] in
-                guard let self, !self.receivedAnyURL else { return }
+                guard let self, !self.dispatcher.receivedAnyURL else { return }
                 self.finish(0)
             }
+
+        case .dryRun, .help, .version, .invalid:
+            // Answered in main.swift before AppKit starts.
+            finish(0)
         }
     }
 
@@ -77,96 +64,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue else {
             return
         }
-        enqueue(raw)
+        dispatcher.enqueue(raw)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            enqueue(url.absoluteString)
-        }
-    }
-
-    private func enqueue(_ raw: String) {
-        receivedAnyURL = true
-        pending.append(raw)
-        routeNextIfIdle()
-    }
-
-    private func routeNextIfIdle() {
-        guard !isRouting else { return }
-        guard !pending.isEmpty else {
-            finish(exitCode)
-            return
-        }
-        isRouting = true
-        route(pending.removeFirst())
-    }
-
-    private func finishedRouting() {
-        isRouting = false
-        routeNextIfIdle()
-    }
-
-    /// Record a failed hand-off so the process does not report success after
-    /// silently dropping the URL.
-    private func handOff(_ plan: LaunchPlan?, describing raw: String) {
-        guard let plan else {
-            FileHandle.standardError.write(
-                Data("which-account: no browser available for \(raw)\n".utf8))
-            exitCode = 1
-            return
-        }
-        if !plan.run() {
-            exitCode = 1
+            dispatcher.enqueue(url.absoluteString)
         }
     }
 
     // MARK: routing
 
-    private func route(_ raw: String) {
-        let router = Router(rawURL: raw)
+    private func route(_ raw: String, done: @escaping (Bool) -> Void) {
+        let router = Router(rawURL: raw, environment: .live)
         self.router = router
-        router.warnIfConfigUnreadable()
+        if let warning = router.configUnreadableWarning {
+            console.err(warning)
+        }
 
         switch router.decision {
         case .passthrough:
-            handOff(router.plan(profileDirectory: nil), describing: raw)
-            finishedRouting()
+            done(handOff(router.plan(profileDirectory: nil), raw: raw))
 
         case let .openProfile(profile, _):
-            handOff(router.plan(profileDirectory: profile.directory), describing: raw)
-            finishedRouting()
+            done(handOff(router.plan(profileDirectory: profile.directory), raw: raw))
 
         case let .fallbackSafari(missing):
-            DefaultBrowser.warnMissing(bundleID: missing)
-            handOff(router.safariPlan(), describing: raw)
-            finishedRouting()
+            Alerts.browserMissing(bundleID: missing)
+            done(handOff(router.safariPlan(), raw: raw))
 
         case let .showPicker(profiles, preselected):
             guard let web = router.webURL else {
-                finishedRouting()
+                done(true)
                 return
             }
-            present(profiles: profiles, preselected: preselected, url: web, openForReal: true)
+            present(profiles: profiles, preselected: preselected, url: web, openForReal: true) {
+                done($0)
+            }
         }
+    }
+
+    private func handOff(_ plan: LaunchPlan?, raw: String) -> Bool {
+        guard let plan else {
+            console.err("which-account: no browser available for \(raw)")
+            return false
+        }
+        return plan.run(using: runner, console: console)
     }
 
     /// `--show-picker`: always show the panel, whatever the rules say, and open nothing.
     private func showPickerOnly(_ raw: String) {
-        receivedAnyURL = true
-        isRouting = true
-
-        let router = Router(rawURL: raw)
+        let router = Router(rawURL: raw, environment: .live)
         self.router = router
 
         guard let web = router.webURL else {
-            FileHandle.standardError.write(Data("which-account: \(raw) is not an http(s) URL\n".utf8))
+            console.err("which-account: \(raw) is not an http(s) URL")
             finish(2)
             return
         }
         guard !router.profileSet.profiles.isEmpty else {
-            FileHandle.standardError.write(
-                Data("which-account: no Chromium profiles found for \(router.config.browser)\n".utf8))
+            console.err("which-account: no Chromium profiles found for \(router.config.browser)")
             finish(2)
             return
         }
@@ -174,51 +131,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         present(profiles: router.profileSet.profiles,
                 preselected: router.profileSet.preselectedIndex,
                 url: web,
-                openForReal: false)
+                openForReal: false) { [weak self] succeeded in
+            self?.finish(succeeded ? 0 : 1)
+        }
     }
 
+    /// Show the picker; `completion` receives whether the hand-off succeeded.
     private func present(profiles: [ChromiumProfile],
                          preselected: Int,
                          url: WebURL,
-                         openForReal: Bool) {
+                         openForReal: Bool,
+                         completion: @escaping (Bool) -> Void) {
         let controller = PickerController(profiles: profiles,
                                           preselectedIndex: preselected,
                                           url: url) { [weak self] choice in
             guard let self else { return }
             guard let choice else {
-                if !openForReal { print("cancelled — nothing opened") }
-                self.finishedRouting()
+                if !openForReal { self.console.out("cancelled — nothing opened") }
+                completion(true)
                 return
             }
 
             var wroteRule = false
             if choice.remember {
-                self.router?.remember(host: url.host, profile: choice.profile)
-                wroteRule = true
+                do {
+                    try self.router?.remember(host: url.host, profile: choice.profile)
+                    wroteRule = true
+                } catch {
+                    self.console.err("which-account: could not save the rule: \(error.localizedDescription)")
+                }
             }
 
+            let plan = self.router?.plan(profileDirectory: choice.profile.directory)
             if openForReal {
-                self.handOff(self.router?.plan(profileDirectory: choice.profile.directory),
-                             describing: url.absolute)
+                completion(self.handOff(plan, raw: url.absolute))
             } else {
-                self.printChoice(choice, url: url, wroteRule: wroteRule)
+                self.console.out("""
+                    chosen      \(choice.profile.title)  [\(choice.profile.directory)]
+                    remember    \(wroteRule
+                                  ? "yes — rule \"\(url.host)\" -> \(choice.profile.directory) written to "
+                                    + (self.router?.configURL.path ?? "config")
+                                  : "no")
+                    would run   \(plan?.shellCommand ?? "—")
+                    """)
+                completion(true)
             }
-            self.finishedRouting()
         }
         picker = controller
         controller.show()
-    }
-
-    private func printChoice(_ choice: PickerChoice, url: WebURL, wroteRule: Bool) {
-        let plan = router?.plan(profileDirectory: choice.profile.directory)
-        print("""
-              chosen      \(choice.profile.title)  [\(choice.profile.directory)]
-              remember    \(wroteRule
-                            ? "yes — rule \"\(url.host)\" -> \(choice.profile.directory) written to "
-                              + (router?.configURL.path ?? "config")
-                            : "no")
-              would run   \(plan?.shellCommand ?? "—")
-              """)
     }
 
     private func finish(_ code: Int32) {
