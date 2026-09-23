@@ -5,7 +5,7 @@ enum Constants {
     static let bundleID = "dev.wine-fall.which-account"
     /// Never "the system default" — that is us, and we would hand the URL to ourselves.
     static let lastResortBrowser = "com.apple.Safari"
-    static let version = "1.0.1"
+    static let version = "1.0.2"
 }
 
 enum BrowserResolver {

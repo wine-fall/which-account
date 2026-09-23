@@ -18,13 +18,13 @@ enum DefaultBrowser {
         let workspace = NSWorkspace.shared
         workspace.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "http") { httpError in
             if let httpError {
-                DispatchQueue.main.async { completion(.failed(httpError.localizedDescription)) }
+                DispatchQueue.main.async { completion(.failed(describe(httpError))) }
                 return
             }
             workspace.setDefaultApplication(at: appURL, toOpenURLsWithScheme: "https") { httpsError in
                 DispatchQueue.main.async {
                     if let httpsError {
-                        completion(.failed(httpsError.localizedDescription))
+                        completion(.failed(describe(httpsError)))
                     } else {
                         completion(.confirmed)
                     }
@@ -32,6 +32,29 @@ enum DefaultBrowser {
             }
         }
     }
+
+    /// LaunchServices errors come back as bare sentences like "The file couldn't be
+    /// opened", which say nothing about what it could not open. Keep the domain and
+    /// code, and name the likeliest cause: another bundle registered under our
+    /// identifier at a path that no longer exists.
+    private static func describe(_ error: Error) -> String {
+        let nsError = error as NSError
+        var message = "\(nsError.localizedDescription) (\(nsError.domain) \(nsError.code))"
+        if nsError.domain == NSCocoaErrorDomain || nsError.domain == NSOSStatusErrorDomain {
+            message += """
+
+                LaunchServices may still have a stale record of \(Constants.bundleID) at a
+                path that has been deleted. List them with:
+                  \(lsregisterPath) -dump | grep -B30 '\(Constants.bundleID)' | grep path:
+                and drop a dead one with:
+                  \(lsregisterPath) -u <that path>
+                """
+        }
+        return message
+    }
+
+    static let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework"
+        + "/Frameworks/LaunchServices.framework/Support/lsregister"
 
     /// The `.app` this process is running inside, or `nil` when it is a bare binary.
     ///
@@ -58,11 +81,30 @@ enum DefaultBrowser {
             """.utf8))
     }
 
+    /// True when we already handle both schemes, so there is nothing to ask for.
+    static func isAlreadyDefault(appURL: URL) -> Bool {
+        ["http", "https"].allSatisfy { scheme in
+            guard let probe = URL(string: "\(scheme)://example.com"),
+                  let current = NSWorkspace.shared.urlForApplication(toOpen: probe) else {
+                return false
+            }
+            return current.standardizedFileURL == appURL.standardizedFileURL
+        }
+    }
+
     /// `--setup`: take over as the default browser, recording whoever held the job.
     static func setup(completion: @escaping (Int32) -> Void) {
         guard let appURL = installedBundleURL() else {
             reportNotInBundle()
             completion(1)
+            return
+        }
+
+        // Asking to become the default when we already are comes back as an error,
+        // which reads like the whole install failed. Say so plainly instead.
+        if isAlreadyDefault(appURL: appURL) {
+            print("which-account: already the default handler for http and https — nothing to do.")
+            completion(0)
             return
         }
 
@@ -93,6 +135,7 @@ enum DefaultBrowser {
         }
 
         print("which-account: current browser recorded as \(config.browser)")
+        print("which-account: registering \(appURL.path)")
         if !ChromiumFamily.isChromium(bundleID: config.browser) {
             print("""
                   which-account: \(config.browser) has no profile concept, so which-account \

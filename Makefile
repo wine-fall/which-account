@@ -37,14 +37,20 @@ test:
 lint:
 	plutil -lint Resources/Info.plist
 
-# Assemble the .app by hand. A locally compiled binary carries no quarantine
-# flag, so it needs no signing and no developer account.
+# Assemble the .app by hand. A locally compiled binary carries no quarantine flag,
+# so no Apple developer account or notarization is involved — but the bundle still
+# has to be ad-hoc signed. The linker's own signature covers only the executable and
+# names it after the binary, which leaves the bundle failing validation
+# ("code has no resources but signature indicates they must be present"), and
+# LaunchServices will not make an invalidly signed app the default browser.
 $(APP): release Resources/Info.plist
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS"
 	cp "$(BIN)" "$(EXEC)"
 	cp Resources/Info.plist "$(APP)/Contents/Info.plist"
-	@echo "assembled $(APP)"
+	codesign --force --sign - --identifier $(BUNDLE_ID) "$(APP)"
+	codesign --verify --strict "$(APP)"
+	@echo "assembled and signed $(APP)"
 
 install: $(APP)
 	@echo "==> telling LaunchServices about the app"
